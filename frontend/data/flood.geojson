@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "น้ำท่วมตัวเมืองหาดใหญ่ (จำลอง)",
+        "source": "satellite+gauge mock"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [100.4685, 7.0085],
+            [100.4870, 7.0095],
+            [100.4975, 6.9975],
+            [100.4860, 6.9840],
+            [100.4705, 6.9890],
+            [100.4685, 7.0085]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "น้ำท่วมพื้นที่ควนลัง (จำลอง)",
+        "source": "satellite+gauge mock"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [100.5170, 7.0180],
+            [100.5340, 7.0160],
+            [100.5375, 7.0005],
+            [100.5205, 6.9985],
+            [100.5170, 7.0180]
+          ]
+        ]
+      }
+    }
+  ]
+}

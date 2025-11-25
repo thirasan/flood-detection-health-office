@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>แผนที่แจ้งเตือนน้ำท่วม หาดใหญ่</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="hero__text">
+      <p class="eyebrow">ข้อมูลจำลองเพื่อการออกแบบระบบ</p>
+      <h1>แผนที่แจ้งเตือนน้ำท่วม หาดใหญ่</h1>
+      <p class="lede">ติดตามสถานะน้ำท่วมและระยะห่างจากโรงพยาบาล/คลินิกรอบตัวเมืองหาดใหญ่ แบบเรียลไทม์ (สาธิต)</p>
+      <div class="meta">
+        <span id="last-updated">อัปเดตล่าสุด: -</span>
+        <button id="refresh-btn" class="ghost-btn">รีเฟรชข้อมูล</button>
+        <span id="source-label" class="pill pill--fallback">แหล่งข้อมูล: ยังไม่เชื่อมต่อ</span>
+      </div>
+      <div class="legend" id="legend">
+        <span class="legend__item"><span class="legend__dot legend__dot--danger"></span>น้ำท่วม</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--warning"></span>เสี่ยงสูง (&lt; 5 กม.)</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--watch"></span>เฝ้าระวัง (5-20 กม.)</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--safe"></span>ปลอดภัย (&gt; 20 กม.)</span>
+        <span class="legend__item"><span class="legend__dot legend__dot--nodata"></span>ไม่มีข้อมูลน้ำท่วม</span>
+      </div>
+    </div>
+    <div class="hero__badge">
+      <p>โฟกัส</p>
+      <strong>หาดใหญ่</strong>
+      <span>สงขลา</span>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel map-panel">
+      <h2>แผนที่น้ำท่วมและสถานพยาบาล</h2>
+      <div id="map"></div>
+      <p class="footnote">* พื้นที่สีน้ำเงินคือขอบเขตน้ำท่วมจำลองจากข้อมูลดาวเทียม/เซ็นเซอร์</p>
+    </section>
+    <section class="panel list-panel">
+      <div class="list-header">
+        <h2>ลำดับสถานพยาบาลตามระยะห่างจากน้ำท่วม</h2>
+        <div class="controls">
+          <label for="risk-filter">แสดง:</label>
+          <select id="risk-filter">
+            <option value="all">ทั้งหมด</option>
+            <option value="flooded">น้ำท่วม</option>
+            <option value="high">เสี่ยงสูง (&lt; 1 กม.)</option>
+            <option value="medium">เฝ้าระวัง (1-3 กม.)</option>
+            <option value="low">ปลอดภัย (&gt; 3 กม.)</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>สถานพยาบาล</th>
+              <th class="numeric">ระยะห่าง</th>
+              <th class="numeric">สถานะ</th>
+            </tr>
+          </thead>
+          <tbody id="facility-rows">
+            <tr><td colspan="3" class="empty">กำลังโหลดข้อมูล…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="footnote">
+        แหล่งข้อมูลที่รองรับ: ThaiWater (น้ำและฝน), GISTDA (ขอบเขตน้ำท่วมดาวเทียม), Hat Yai Climate EWS, OSM/ชุดข้อมูลสถานพยาบาลไทย
+      </p>
+    </section>
+  </main>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin="">
+  </script>
+  <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+  <script src="./config.js?v=20251125"></script>
+  <script src="./data/fallback.js?v=20251125"></script>
+  <script src="./script.js?v=20251125"></script>
+</body>
+</html>
