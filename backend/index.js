@@ -16,9 +16,9 @@ const OPEN_URL_TEMPLATE =
 
 const GATEWAY_URL =
   process.env.GISTDA_GATEWAY_URL ||
-  'https://api-gateway.gistda.or.th/api/2.0/resources/features/flood/7days?api_key={API_KEY}';
-const GATEWAY_LIMIT = process.env.GISTDA_GATEWAY_LIMIT || '10000';
-const GATEWAY_OFFSET = process.env.GISTDA_GATEWAY_OFFSET || '0';
+  'https://api-gateway.gistda.or.th/api/2.0/resources/features/flood/7days';
+const GATEWAY_LIMIT = parseInt(process.env.GISTDA_GATEWAY_LIMIT || '10000', 10);
+const GATEWAY_OFFSET = parseInt(process.env.GISTDA_GATEWAY_OFFSET || '0', 10);
 const GATEWAY_USE_QUERY_KEY = process.env.GISTDA_GATEWAY_USE_QUERY_KEY === 'true';
 const REFRESH_MS = 360 * 60 * 1000; // 5 นาที
 
@@ -38,11 +38,11 @@ function buildUrl(template, bbox) {
     .replace('{MAXY}', bbox.maxY);
 }
 
-function buildGatewayUrl(bbox, includeApiKeyAsQuery = false) {
+function buildGatewayUrl(bbox, includeApiKeyAsQuery = false, offset = GATEWAY_OFFSET) {
   const url = new URL(GATEWAY_URL);
   url.searchParams.set('bbox', `${bbox.minX},${bbox.minY},${bbox.maxX},${bbox.maxY}`);
   url.searchParams.set('limit', GATEWAY_LIMIT);
-  url.searchParams.set('offset', GATEWAY_OFFSET);
+  url.searchParams.set('offset', offset);
   if (includeApiKeyAsQuery || GATEWAY_USE_QUERY_KEY) {
     url.searchParams.set('apikey', API_KEY);
   }
@@ -57,45 +57,72 @@ async function fetchFlood() {
   }
 
   const bbox = DEFAULT_BBOX;
-  const candidates = [
-    {
-      url: buildGatewayUrl(bbox),
-      label: 'gateway',
-      headers: { 'API-Key': API_KEY, accept: 'application/json' }
-    },
-    {
-      url: buildGatewayUrl(bbox, true),
-      label: 'gateway-query',
-      headers: { accept: 'application/json' }
-    },
-    { url: buildUrl(OPEN_URL_TEMPLATE, bbox), label: 'open', headers: {} }
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      const res = await fetch(candidate.url, {
-        redirect: 'follow',
-        headers: candidate.headers
-      });
-      if (!res.ok) {
-        const body = await safeReadBody(res);
-        console.warn(`GISTDA ${candidate.label} HTTP ${res.status}`, body);
-        continue;
+  // Try gateway paginated
+  const maxIterations = 10;
+  let offset = GATEWAY_OFFSET;
+  let aggregated = [];
+  let aggregatedSource = null;
+  for (let i = 0; i < maxIterations; i += 1) {
+    const candidate = {
+      url: buildGatewayUrl(bbox, GATEWAY_USE_QUERY_KEY, offset),
+      label: `gateway(offset=${offset})`,
+      headers: GATEWAY_USE_QUERY_KEY ? { accept: 'application/json' } : { 'API-Key': API_KEY, accept: 'application/json' }
+    };
+    const fc = await tryFetch(candidate);
+    if (fc && fc.features?.length) {
+      aggregated = aggregated.concat(fc.features);
+      aggregatedSource = candidate.url;
+      console.log(
+        `Fetched flood data from GISTDA (${candidate.label}) with ${fc.features.length} features (agg=${aggregated.length})`
+      );
+      if (fc.features.length < GATEWAY_LIMIT) {
+        break;
       }
-      const json = await res.json();
-      const fc = normalizeGeoJson(json);
-      cache.data = fc;
-      cache.fetchedAt = new Date().toISOString();
-      cache.sourceUrl = candidate.url;
-      cache.error = null;
-      console.log(`Fetched flood data from GISTDA (${candidate.label})`);
-      return;
-    } catch (err) {
-      console.warn(`Fetch failed for ${candidate.label}`, err);
+      offset += GATEWAY_LIMIT;
+      continue;
     }
   }
 
+  if (aggregated.length) {
+    cache.data = { type: 'FeatureCollection', features: aggregated };
+    cache.fetchedAt = new Date().toISOString();
+    cache.sourceUrl = aggregatedSource;
+    cache.error = null;
+    return;
+  }
+
+  // Fallback: open endpoint once
+  const openCandidate = { url: buildUrl(OPEN_URL_TEMPLATE, bbox), label: 'open', headers: {} };
+  const fcOpen = await tryFetch(openCandidate);
+  if (fcOpen && fcOpen.features?.length) {
+    cache.data = fcOpen;
+    cache.fetchedAt = new Date().toISOString();
+    cache.sourceUrl = openCandidate.url;
+    cache.error = null;
+    console.log(`Fetched flood data from GISTDA (${openCandidate.label})`);
+    return;
+  }
+
   cache.error = 'Unable to fetch flood data from GISTDA';
+}
+
+async function tryFetch(candidate) {
+  try {
+    const res = await fetch(candidate.url, {
+      redirect: 'follow',
+      headers: candidate.headers
+    });
+    if (!res.ok) {
+      const body = await safeReadBody(res);
+      console.warn(`GISTDA ${candidate.label} HTTP ${res.status}`, body);
+      return null;
+    }
+    const json = await res.json();
+    return normalizeGeoJson(json);
+  } catch (err) {
+    console.warn(`Fetch failed for ${candidate.label}`, err);
+    return null;
+  }
 }
 
 function normalizeGeoJson(data) {
