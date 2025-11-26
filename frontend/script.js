@@ -42,6 +42,7 @@ const statusConfig = {
 
 document.addEventListener('DOMContentLoaded', () => {
   setupMap();
+  enhanceCustomSelects();
   bindControls();
   refreshData();
   startAutoRefresh();
@@ -78,6 +79,88 @@ function bindControls() {
   }
 }
 
+function enhanceCustomSelects() {
+  ['province-filter', 'type-filter', 'risk-filter'].forEach((id) => enhanceSelect(id));
+}
+
+function enhanceSelect(id) {
+  const select = document.getElementById(id);
+  if (!select || select.dataset.enhanced) return;
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'custom-select';
+  select.parentNode.insertBefore(wrapper, select);
+  wrapper.appendChild(select);
+
+  select.classList.add('custom-select__native');
+  select.dataset.enhanced = 'true';
+
+  const trigger = document.createElement('button');
+  trigger.type = 'button';
+  trigger.className = 'custom-select__trigger';
+  wrapper.appendChild(trigger);
+
+  const menu = document.createElement('div');
+  menu.className = 'custom-select__menu';
+  wrapper.appendChild(menu);
+
+  const closeMenu = () => wrapper.classList.remove('open');
+  const openMenu = () => {
+    buildMenu();
+    wrapper.classList.add('open');
+  };
+
+  function buildMenu() {
+    menu.innerHTML = '';
+    Array.from(select.options).forEach((opt) => {
+      const item = document.createElement('button');
+      item.type = 'button';
+      item.className = 'custom-select__option' + (opt.selected ? ' is-selected' : '');
+      item.textContent = opt.textContent;
+      item.dataset.value = opt.value;
+      item.addEventListener('click', () => {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        closeMenu();
+      });
+      menu.appendChild(item);
+    });
+  }
+
+  function syncTrigger() {
+    const opt = select.options[select.selectedIndex];
+    trigger.textContent = opt ? opt.textContent : '—';
+  }
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (wrapper.classList.contains('open')) {
+      closeMenu();
+    } else {
+      openMenu();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!wrapper.contains(e.target)) closeMenu();
+  });
+
+  select.addEventListener('change', syncTrigger);
+
+  syncTrigger();
+}
+
+function syncEnhancedSelects() {
+  ['province-filter', 'type-filter', 'risk-filter'].forEach((id) => {
+    const select = document.getElementById(id);
+    if (!select || !select.dataset.enhanced) return;
+    const trigger = select.parentElement?.querySelector('.custom-select__trigger');
+    if (!trigger) return;
+    const opt = select.options[select.selectedIndex];
+    trigger.textContent = opt ? opt.textContent : '—';
+  });
+}
+
 function startAutoRefresh() {
   if (autoRefreshId) clearInterval(autoRefreshId);
   autoRefreshId = setInterval(() => refreshData(false), REFRESH_MS);
@@ -108,6 +191,7 @@ async function refreshData(manual = false, { showRenderLoading = false } = {}) {
     setFilterOptions(facilities);
     floodGeojson = normalizeFlood(floodData);
     calculateAndRender();
+    syncEnhancedSelects();
   } catch (err) {
     console.error('คำนวณผลล้มเหลว', err);
     errorMsg = errorMsg || 'คำนวณผลไม่สำเร็จ';
@@ -454,9 +538,7 @@ function setFilterOptions(facilityData) {
   const typeSelect = document.getElementById('type-filter');
   if (provinceSelect) {
     const provinces = Array.from(new Set(facilityData.map((f) => f.province).filter(Boolean))).sort();
-    provinceSelect.innerHTML =
-      '<option value="all">ทุกจังหวัด</option>' +
-      provinces.map((p) => `<option value="${p}">${provinceNameMap[p] || p}</option>`).join('');
+    provinceSelect.innerHTML = provinces.map((p) => `<option value="${p}">${provinceNameMap[p] || p}</option>`).join('');
     if (!selectedProvince || (!provinces.includes(selectedProvince) && selectedProvince !== 'all')) {
       selectedProvince = provinces.includes('สงขลา') ? 'สงขลา' : provinces[0] || 'all';
     }
@@ -465,9 +547,7 @@ function setFilterOptions(facilityData) {
   }
   if (typeSelect) {
     const types = Array.from(new Set(facilityData.map((f) => f.type).filter(Boolean))).sort();
-    typeSelect.innerHTML =
-      '<option value="all">ทุกประเภท</option>' +
-      types.map((t) => `<option value="${t}">${t}</option>`).join('');
+    typeSelect.innerHTML = types.map((t) => `<option value="${t}">${t}</option>`).join('');
     if (!selectedType || (!types.includes(selectedType) && selectedType !== 'all')) {
       selectedType = types.includes('คลินิกทันตกรรม') ? 'คลินิกทันตกรรม' : 'all';
     }

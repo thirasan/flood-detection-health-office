@@ -57,30 +57,36 @@
       <div class="list-header">
         <h2>ลำดับสถานพยาบาลตามระยะห่างจากน้ำท่วม</h2>
         <div class="controls">
-          <label for="province-filter">จังหวัด:</label>
-          <select id="province-filter">
-            <option value="songkhla">สงขลา</option>
-            <option value="surat-thani">สุราษฎร์ธานี</option>
-            <option value="nakhon-si-thammarat">นครศรีธรรมราช</option>
-            <option value="phatthalung">พัทลุง</option>
-            <option value="narathiwat">นราธิวาส</option>
-          </select>
-          <label for="type-filter">ประเภท:</label>
-          <select id="type-filter">
-            <option value="คลินิกทันตกรรม">คลินิกทันตกรรม</option>
-            <option value="โรงพยาบาล">โรงพยาบาล</option>
-            <option value="โรงพยาบาลส่งเสริมสุขภาพ">โรงพยาบาลส่งเสริมสุขภาพ</option>
-            <option value="คลินิก">คลินิก</option>
-          </select>
-          <label for="risk-filter">สถานะ:</label>
-          <select id="risk-filter">
-            <option value="all">ทั้งหมด</option>
-            <option value="flooded">น้ำท่วม</option>
-            <option value="high">เสี่ยงสูง (&lt; 5 กม.)</option>
-            <option value="medium">เฝ้าระวัง (5-20 กม.)</option>
-            <option value="low">ปลอดภัย (&gt; 20 กม.)</option>
-            <option value="nodata">ไม่มีข้อมูลน้ำท่วม</option>
-          </select>
+          <div class="control">
+            <label for="province-filter">จังหวัด</label>
+            <select id="province-filter">
+              <option value="songkhla">สงขลา</option>
+              <option value="surat-thani">สุราษฎร์ธานี</option>
+              <option value="nakhon-si-thammarat">นครศรีธรรมราช</option>
+              <option value="phatthalung">พัทลุง</option>
+              <option value="narathiwat">นราธิวาส</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="type-filter">ประเภท</label>
+            <select id="type-filter">
+              <option value="คลินิกทันตกรรม">คลินิกทันตกรรม</option>
+              <option value="โรงพยาบาล">โรงพยาบาล</option>
+              <option value="โรงพยาบาลส่งเสริมสุขภาพ">โรงพยาบาลส่งเสริมสุขภาพ</option>
+              <option value="คลินิก">คลินิก</option>
+            </select>
+          </div>
+          <div class="control">
+            <label for="risk-filter">สถานะ</label>
+            <select id="risk-filter">
+              <option value="all">ทั้งหมด</option>
+              <option value="flooded">น้ำท่วม</option>
+              <option value="high">เสี่ยงสูง (&lt; 5 กม.)</option>
+              <option value="medium">เฝ้าระวัง (5-20 กม.)</option>
+              <option value="low">ปลอดภัย (&gt; 20 กม.)</option>
+              <option value="nodata">ไม่มีข้อมูลน้ำท่วม</option>
+            </select>
+          </div>
         </div>
       </div>
       <div id="error-banner" class="error-banner" style="display:none;"></div>

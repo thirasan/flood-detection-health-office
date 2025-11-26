@@ -206,19 +206,127 @@ header.hero {
 }
 
 .controls {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
   color: var(--muted);
   font-size: 14px;
+  flex-wrap: wrap;
 }
 
-select {
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  min-width: 180px;
+  flex: 1;
+}
+
+.control label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.control select {
+  -webkit-appearance: menulist;
+  -moz-appearance: menulist;
+  appearance: menulist;
   background: #0c1b30;
   color: var(--text);
   border-radius: 10px;
   border: 1px solid var(--border);
-  padding: 8px 10px;
+  padding: 10px 12px;
+  width: 100%;
+  line-height: 1.4;
+  font-size: 16px; /* avoid mobile zoom/jump */
+  min-height: 44px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.control select:focus {
+  outline: none;
+  border-color: rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
+}
+
+.control select option {
+  background: #0c1b30;
+  color: var(--text);
+}
+
+.custom-select {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select__native {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.custom-select__trigger {
+  width: 100%;
+  text-align: left;
+  background: #0c1b30;
+  color: var(--text);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  padding: 10px 34px 10px 12px;
+  line-height: 1.4;
+  font-size: 16px;
+  min-height: 44px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.custom-select__trigger:focus {
+  outline: none;
+  border-color: rgba(45, 212, 191, 0.6);
+  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.14);
+}
+
+.custom-select__menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #0c1b30;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  max-height: 260px;
+  overflow: auto;
+  padding: 6px 0;
+  z-index: 20;
+  display: none;
+}
+
+.custom-select.open .custom-select__menu {
+  display: block;
+}
+
+.custom-select__option {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.custom-select__option:hover,
+.custom-select__option:focus {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.custom-select__option.is-selected {
+  color: var(--accent);
 }
 
 .table-wrapper {
@@ -343,5 +451,11 @@ tbody tr:hover {
   }
   th, td {
     padding: 10px 12px;
+  }
+  .controls {
+    width: 100%;
+  }
+  .control {
+    min-width: 160px;
   }
 }
