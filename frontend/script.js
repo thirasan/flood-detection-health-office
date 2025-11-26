@@ -1,7 +1,22 @@
 const mapCenter = [7.005, 100.49];
 const zoomLevel = 12.6;
-const REFRESH_MS = 5 * 60 * 1000; // 5 นาที
+const REFRESH_MS = 30 * 60 * 1000; // 5 นาที
 const config = window.appConfig || {};
+const provinceNameMap = {
+  'surat-thani': 'สุราษฎร์ธานี',
+  'nakhon-si-thammarat': 'นครศรีธรรมราช',
+  phatthalung: 'พัทลุง',
+  songkhla: 'สงขลา',
+  narathiwat: 'นราธิวาส',
+  unknown: 'ไม่ทราบ'
+};
+const provinceSlugMap = {
+  สุราษฎร์ธานี: 'surat-thani',
+  นครศรีธรรมราช: 'nakhon-si-thammarat',
+  พัทลุง: 'phatthalung',
+  สงขลา: 'songkhla',
+  นราธิวาส: 'narathiwat'
+};
 
 let map;
 let floodLayer;
@@ -12,6 +27,8 @@ let computedFacilities = [];
 let markerIndex = new Map();
 let autoRefreshId = null;
 let isLoading = false;
+let selectedProvince = 'สงขลา';
+let selectedType = 'โรงพยาบาล';
 
 const statusConfig = {
   flooded: { label: 'น้ำท่วม', badgeClass: 'badge--danger', color: '#ef4444' },
@@ -42,6 +59,20 @@ function setupMap() {
 function bindControls() {
   document.getElementById('refresh-btn').addEventListener('click', () => refreshData(true));
   document.getElementById('risk-filter').addEventListener('change', () => renderTable());
+  const provinceSelect = document.getElementById('province-filter');
+  const typeSelect = document.getElementById('type-filter');
+  if (provinceSelect) {
+    provinceSelect.addEventListener('change', (e) => {
+      selectedProvince = e.target.value || 'all';
+      refreshData(true);
+    });
+  }
+  if (typeSelect) {
+    typeSelect.addEventListener('change', (e) => {
+      selectedType = e.target.value || 'all';
+      calculateAndRender();
+    });
+  }
 }
 
 function startAutoRefresh() {
@@ -58,6 +89,7 @@ async function refreshData(manual = false) {
       loadFloodData()
     ]);
     facilities = facilityData;
+    setFilterOptions(facilities);
     floodGeojson = normalizeFlood(floodData);
     calculateAndRender();
     setLastUpdated(manual);
@@ -78,19 +110,35 @@ async function loadJSON(path) {
 async function loadFloodData() {
   // 1) เรียก backend ภายใน (หลีกเลี่ยง CORS/GISTDA redirect)
   const backendBase = (config.backendBaseUrl || 'http://localhost:4000').replace(/\/$/, '');
-  const backendUrl = `${backendBase}/api/flood`;
+  const provinceSlug = provinceSlugMap[selectedProvince] || provinceSlugMap[selectedProvince?.trim()] || '';
+  const limit = 500;
+  let offset = 0;
+  let aggregated = [];
+  const maxPages = 20;
+
   try {
-    const res = await fetch(backendUrl, {
-      mode: 'cors',
-      method: 'GET',
-      cache: 'no-store'
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status} จาก backend`);
-    const payload = await res.json();
-    const dataset = normalizeFlood(payload?.data || payload);
-    if (dataset.features.length > 0) {
-      setSourceLabel(true, backendUrl, true);
-      return dataset;
+    for (let i = 0; i < maxPages; i += 1) {
+      const qs = new URLSearchParams();
+      if (provinceSlug) qs.set('province', provinceSlug);
+      qs.set('limit', String(limit));
+      qs.set('offset', String(offset));
+      const backendUrl = `${backendBase}/api/flood?${qs.toString()}`;
+      const res = await fetch(backendUrl, {
+        mode: 'cors',
+        method: 'GET',
+        cache: 'no-store'
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} จาก backend`);
+      const payload = await res.json();
+      const dataset = normalizeFlood(payload?.data || payload);
+      aggregated = aggregated.concat(dataset.features || []);
+      if (dataset.features.length < limit) break;
+      offset += limit;
+    }
+    if (aggregated.length > 0) {
+      const finalFc = { type: 'FeatureCollection', features: aggregated };
+      setSourceLabel(true, `${backendBase}/api/flood`, true);
+      return finalFc;
     }
     console.warn('backend ส่งข้อมูลแต่ไม่มีโพลิกอน ใช้สำรองแทน');
   } catch (err) {
@@ -149,7 +197,9 @@ function calculateAndRender() {
   const hasFlood = Array.isArray(floodGeojson.features) && floodGeojson.features.length > 0;
   console.log('Flood features loaded:', hasFlood ? floodGeojson.features.length : 0);
 
-  const enriched = facilities.map((facility) => {
+  const filteredFacilities = facilities.filter(filterFacilities);
+
+  const enriched = filteredFacilities.map((facility) => {
     const point = turf.point([facility.lng, facility.lat]);
     const { distanceKm, inside } = hasFlood
       ? findNearestFloodDistance(point, floodGeojson.features)
@@ -162,6 +212,12 @@ function calculateAndRender() {
   renderFloodLayer();
   renderMarkers(enriched);
   renderTable(enriched);
+}
+
+function filterFacilities(facility) {
+  const matchProvince = selectedProvince === 'all' || facility.province === selectedProvince;
+  const matchType = selectedType === 'all' || facility.type === selectedType;
+  return matchProvince && matchType;
 }
 
 function findNearestFloodDistance(point, floodFeatures) {
@@ -350,6 +406,35 @@ function setSourceLabel(connected, url, isPrimary) {
   }
   el.textContent = isPrimary ? `ข้อมูลสด: ${url}` : `ใช้ข้อมูลสำรอง: ${url}`;
   el.className = `pill ${isPrimary ? 'pill--live' : 'pill--fallback'}`;
+}
+
+function setFilterOptions(facilityData) {
+  const provinceSelect = document.getElementById('province-filter');
+  const typeSelect = document.getElementById('type-filter');
+  if (provinceSelect) {
+    const provinces = Array.from(
+      new Set(facilityData.map((f) => f.province).filter(Boolean))
+    ).sort();
+    provinceSelect.innerHTML = provinces
+      .map((p) => `<option value="${p}">${provinceNameMap[p] || p}</option>`)
+      .join('');
+    if (!selectedProvince || !provinces.includes(selectedProvince)) {
+      selectedProvince = 'สงขลา';
+    }
+    provinceSelect.value = selectedProvince;
+  }
+  if (typeSelect) {
+    const types = Array.from(
+      new Set(facilityData.map((f) => f.type).filter(Boolean))
+    ).sort();
+    typeSelect.innerHTML = `<option value="all">ทุกประเภท</option>${types
+      .map((t) => `<option value="${t}">${t}</option>`)
+      .join('')}`;
+    if (!selectedType || (!types.includes(selectedType) && selectedType !== 'all')) {
+      selectedType = 'โรงพยาบาล';
+    }
+    typeSelect.value = selectedType;
+  }
 }
 
 function normalizeFlood(data) {

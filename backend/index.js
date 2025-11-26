@@ -3,16 +3,33 @@ import http from 'http';
 const PORT = process.env.PORT || 4000;
 const API_KEY = process.env.GISTDA_API_KEY || '';
 
-const DEFAULT_BBOX = {
-  minX: parseFloat(process.env.BBOX_MINX || '100.02'),
-  minY: parseFloat(process.env.BBOX_MINY || '6.28'),
-  maxX: parseFloat(process.env.BBOX_MAXX || '101.10'),
-  maxY: parseFloat(process.env.BBOX_MAXY || '7.93')
-};
-
-const OPEN_URL_TEMPLATE =
-  process.env.GISTDA_URL_TEMPLATE ||
-  'https://disaster.gistda.or.th/services/get_features_flood_7days?token={API_KEY}&bbox={MINX},{MINY},{MAXX},{MAXY}';
+const PROVINCES = [
+  {
+    id: 'surat-thani',
+    th: 'สุราษฎร์ธานี',
+    bbox: { minX: 98.72, minY: 7.78, maxX: 100.15, maxY: 10.33 }
+  },
+  {
+    id: 'nakhon-si-thammarat',
+    th: 'นครศรีธรรมราช',
+    bbox: { minX: 99.3, minY: 7.75, maxX: 100.3, maxY: 9.5 }
+  },
+  {
+    id: 'phatthalung',
+    th: 'พัทลุง',
+    bbox: { minX: 99.73, minY: 7.08, maxX: 100.42, maxY: 7.92 }
+  },
+  {
+    id: 'songkhla',
+    th: 'สงขลา',
+    bbox: { minX: 100.02, minY: 6.28, maxX: 101.1, maxY: 7.93 }
+  },
+  {
+    id: 'narathiwat',
+    th: 'นราธิวาส',
+    bbox: { minX: 101.33, minY: 5.75, maxX: 102.08, maxY: 6.5 }
+  }
+];
 
 const GATEWAY_URL =
   process.env.GISTDA_GATEWAY_URL ||
@@ -29,19 +46,10 @@ const cache = {
   error: null
 };
 
-function buildUrl(template, bbox) {
-  return template
-    .replace('{API_KEY}', encodeURIComponent(API_KEY))
-    .replace('{MINX}', bbox.minX)
-    .replace('{MINY}', bbox.minY)
-    .replace('{MAXX}', bbox.maxX)
-    .replace('{MAXY}', bbox.maxY);
-}
-
-function buildGatewayUrl(bbox, includeApiKeyAsQuery = false, offset = GATEWAY_OFFSET) {
+function buildGatewayUrl(bbox, includeApiKeyAsQuery = false, offset = GATEWAY_OFFSET, limit = GATEWAY_LIMIT) {
   const url = new URL(GATEWAY_URL);
   url.searchParams.set('bbox', `${bbox.minX},${bbox.minY},${bbox.maxX},${bbox.maxY}`);
-  url.searchParams.set('limit', GATEWAY_LIMIT);
+  url.searchParams.set('limit', limit);
   url.searchParams.set('offset', offset);
   if (includeApiKeyAsQuery || GATEWAY_USE_QUERY_KEY) {
     url.searchParams.set('apikey', API_KEY);
@@ -56,54 +64,63 @@ async function fetchFlood() {
     return;
   }
 
-  const bbox = DEFAULT_BBOX;
-  // Try gateway paginated
-  const maxIterations = 10;
-  let offset = GATEWAY_OFFSET;
-  let aggregated = [];
-  let aggregatedSource = null;
-  for (let i = 0; i < maxIterations; i += 1) {
-    const candidate = {
-      url: buildGatewayUrl(bbox, GATEWAY_USE_QUERY_KEY, offset),
-      label: `gateway(offset=${offset})`,
-      headers: GATEWAY_USE_QUERY_KEY ? { accept: 'application/json' } : { 'API-Key': API_KEY, accept: 'application/json' }
-    };
-    const fc = await tryFetch(candidate);
-    if (fc && fc.features?.length) {
-      aggregated = aggregated.concat(fc.features);
-      aggregatedSource = candidate.url;
-      console.log(
-        `Fetched flood data from GISTDA (${candidate.label}) with ${fc.features.length} features (agg=${aggregated.length})`
-      );
-      if (fc.features.length < GATEWAY_LIMIT) {
-        break;
-      }
-      offset += GATEWAY_LIMIT;
-      continue;
-    }
-  }
-
-  if (aggregated.length) {
-    cache.data = { type: 'FeatureCollection', features: aggregated };
+  const agg = await fetchAllProvinces();
+  if (agg.features.length) {
+    cache.data = agg;
     cache.fetchedAt = new Date().toISOString();
-    cache.sourceUrl = aggregatedSource;
+    cache.sourceUrl = 'gateway-multi';
     cache.error = null;
-    return;
-  }
-
-  // Fallback: open endpoint once
-  const openCandidate = { url: buildUrl(OPEN_URL_TEMPLATE, bbox), label: 'open', headers: {} };
-  const fcOpen = await tryFetch(openCandidate);
-  if (fcOpen && fcOpen.features?.length) {
-    cache.data = fcOpen;
-    cache.fetchedAt = new Date().toISOString();
-    cache.sourceUrl = openCandidate.url;
-    cache.error = null;
-    console.log(`Fetched flood data from GISTDA (${openCandidate.label})`);
     return;
   }
 
   cache.error = 'Unable to fetch flood data from GISTDA';
+}
+
+async function fetchAllProvinces() {
+  let allFeatures = [];
+  for (const prov of PROVINCES) {
+    const fc = await fetchProvince(prov);
+    if (fc?.features?.length) {
+      const withProv = fc.features.map((feat) => ({
+        ...feat,
+        properties: { ...(feat.properties || {}), province: prov.id, province_th: prov.th }
+      }));
+      allFeatures = allFeatures.concat(withProv);
+    }
+  }
+  return { type: 'FeatureCollection', features: allFeatures };
+}
+
+async function fetchProvince(prov) {
+  const limit = GATEWAY_LIMIT;
+  let offset = GATEWAY_OFFSET;
+  let total = null;
+  let agg = [];
+  const maxIterations = 50;
+
+  for (let i = 0; i < maxIterations; i += 1) {
+    const url = buildGatewayUrl(prov.bbox, GATEWAY_USE_QUERY_KEY, offset, limit);
+    const headers = GATEWAY_USE_QUERY_KEY ? { accept: 'application/json' } : { 'API-Key': API_KEY, accept: 'application/json' };
+    const fc = await tryFetch({ url, label: `${prov.id}[${offset}]`, headers });
+    if (!fc || !fc.features) break;
+
+    agg = agg.concat(fc.features);
+
+    // Determine total if available in response
+    total =
+      total ||
+      fc.total ||
+      fc.totalFeatures ||
+      fc.count ||
+      fc.numberMatched ||
+      fc.features.length;
+
+    if (fc.features.length < limit) break;
+    if (total && offset + limit >= total) break;
+    offset += limit;
+  }
+
+  return { type: 'FeatureCollection', features: agg };
 }
 
 async function tryFetch(candidate) {
@@ -130,6 +147,7 @@ function normalizeGeoJson(data) {
   if (Array.isArray(data?.features)) {
     return { type: 'FeatureCollection', features: data.features };
   }
+  if (Array.isArray(data)) return { type: 'FeatureCollection', features: data };
   throw new Error('Response is not a GeoJSON FeatureCollection');
 }
 
@@ -152,6 +170,7 @@ function sendJson(res, status, payload) {
 }
 
 function handleRequest(req, res) {
+  const urlObj = new URL(req.url, `http://localhost:${PORT}`);
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Origin': '*',
@@ -161,14 +180,29 @@ function handleRequest(req, res) {
     return res.end();
   }
 
-  if (req.url.startsWith('/api/flood') && (req.method === 'GET' || req.method === 'POST')) {
+  if (urlObj.pathname.startsWith('/api/flood') && (req.method === 'GET' || req.method === 'POST')) {
+    const province = urlObj.searchParams.get('province');
+    const limit = Math.max(1, parseInt(urlObj.searchParams.get('limit') || '500', 10));
+    const offset = Math.max(0, parseInt(urlObj.searchParams.get('offset') || '0', 10));
+
     if (cache.data) {
+      const filtered =
+        province && province !== 'all'
+          ? cache.data.features.filter(
+              (f) => f.properties?.province === province || f.properties?.province_th === province
+            )
+          : cache.data.features;
+
+      const sliced = filtered.slice(offset, offset + limit);
+      const data = { type: 'FeatureCollection', features: sliced };
+
       return sendJson(res, 200, {
         status: 'ok',
         fetchedAt: cache.fetchedAt,
         sourceUrl: cache.sourceUrl,
-        features: cache.data.features?.length || 0,
-        data: cache.data
+        features: data.features.length,
+        total: filtered.length,
+        data
       });
     }
     return sendJson(res, 503, { status: 'error', error: cache.error || 'Data not available' });
