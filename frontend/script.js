@@ -94,6 +94,9 @@ function enhanceSelect(id) {
 
   select.classList.add('custom-select__native');
   select.dataset.enhanced = 'true';
+  select.tabIndex = -1;
+  select.setAttribute('aria-hidden', 'true');
+  select.setAttribute('data-native-hidden', 'true');
 
   const trigger = document.createElement('button');
   trigger.type = 'button';
