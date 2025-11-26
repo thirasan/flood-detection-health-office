@@ -23,6 +23,8 @@ let floodLayer;
 let markerGroup;
 let facilities = [];
 let floodGeojson;
+let floodCache = {};
+let lastProvinceFetched = null;
 let computedFacilities = [];
 let markerIndex = new Map();
 let autoRefreshId = null;
@@ -70,7 +72,8 @@ function bindControls() {
   if (typeSelect) {
     typeSelect.addEventListener('change', (e) => {
       selectedType = e.target.value || 'all';
-      rerenderFiltered();
+      // Recompute distances within the current province but new type filter
+      calculateAndRender();
     });
   }
 }
@@ -126,6 +129,12 @@ async function loadFloodData() {
   let aggregated = [];
   const maxPages = 20;
 
+  // reuse cache if province not changed
+  const cacheKey = provinceSlug || 'all';
+  if (cacheKey === lastProvinceFetched && floodCache[cacheKey]) {
+    return floodCache[cacheKey];
+  }
+
   try {
     for (let i = 0; i < maxPages; i += 1) {
       const qs = new URLSearchParams();
@@ -148,6 +157,10 @@ async function loadFloodData() {
     if (aggregated.length > 0) {
       const finalFc = { type: 'FeatureCollection', features: aggregated };
       setSourceLabel(true, `${backendBase}/api/flood`, true);
+      floodCache[cacheKey] = finalFc;
+      lastProvinceFetched = cacheKey;
+
+      console.log('Flood features loaded:', finalFc.features.length);
       return finalFc;
     }
     throw new Error('backend ส่งข้อมูลแต่ไม่มีโพลิกอน');
@@ -171,7 +184,6 @@ function calculateAndRender() {
   MAX_RENDER_FACILITIES = 2000
 
   const hasFlood = Array.isArray(floodGeojson.features) && floodGeojson.features.length > 0;
-  console.log('Flood features loaded:', hasFlood ? floodGeojson.features.length : 0);
 
   const filteredFacilities = facilities.filter(filterFacilities).slice(0, MAX_RENDER_FACILITIES);
 
