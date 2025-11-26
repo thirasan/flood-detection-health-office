@@ -88,6 +88,7 @@ async function fetchAllProvinces() {
       allFeatures = allFeatures.concat(withProv);
     }
   }
+  console.log(`Finished fetching provinces. Total features: ${allFeatures.length}`);
   return { type: 'FeatureCollection', features: allFeatures };
 }
 
