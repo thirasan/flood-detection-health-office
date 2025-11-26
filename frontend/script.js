@@ -209,8 +209,19 @@ function rerenderFiltered() {
   renderTable(filtered);
 }
 
+function normalizeProvince(value) {
+  if (!value) return '';
+  const trimmed = String(value).trim();
+  // Map Thai province names to slugs when possible to compare consistently
+  return (provinceSlugMap[trimmed] || trimmed).toLowerCase();
+}
+
 function filterFacilities(facility) {
-  return facility.type === selectedType || selectedType === 'all';
+  const matchesType = selectedType === 'all' || facility.type === selectedType;
+  const selectedProv = normalizeProvince(selectedProvince);
+  const facilityProv = normalizeProvince(facility.province);
+  const matchesProvince = selectedProv === 'all' || !selectedProv || facilityProv === selectedProv;
+  return matchesType && matchesProvince;
 }
 
 function findNearestFloodDistance(point, floodFeatures) {
@@ -397,7 +408,7 @@ function setSourceLabel(connected, url, isPrimary) {
     el.className = 'pill pill--fallback';
     return;
   }
-  el.textContent = isPrimary ? `ข้อมูลสด: ${url}` : `ใช้ข้อมูลสำรอง: ${url}`;
+  el.textContent = isPrimary ? `ข้อมูลสด` : `ข้อมูลสด`;
   el.className = `pill ${isPrimary ? 'pill--live' : 'pill--fallback'}`;
 }
 
