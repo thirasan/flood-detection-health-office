@@ -60,12 +60,13 @@ function setupMap() {
 
 function bindControls() {
   document.getElementById('refresh-btn').addEventListener('click', () => refreshData(true));
-  document.getElementById('risk-filter').addEventListener('change', () => renderTable());
+  document.getElementById('risk-filter').addEventListener('change', () => rerenderFiltered());
   const provinceSelect = document.getElementById('province-filter');
   const typeSelect = document.getElementById('type-filter');
   if (provinceSelect) {
     provinceSelect.addEventListener('change', (e) => {
       selectedProvince = e.target.value || 'all';
+      updateProvinceLabel();
       refreshData(true);
     });
   }
@@ -412,6 +413,7 @@ function setFilterOptions(facilityData) {
       selectedProvince = provinces.includes('สงขลา') ? 'สงขลา' : provinces[0] || 'all';
     }
     provinceSelect.value = selectedProvince;
+    updateProvinceLabel();
   }
   if (typeSelect) {
     const types = Array.from(new Set(facilityData.map((f) => f.type).filter(Boolean))).sort();
@@ -482,4 +484,10 @@ function toPolygonFeature(feature) {
     // ignore
   }
   return null;
+}
+
+function updateProvinceLabel() {
+  const label = document.getElementById('province-label');
+  if (!label) return;
+  label.textContent = selectedProvince === 'all' ? 'ทุกจังหวัด' : selectedProvince;
 }

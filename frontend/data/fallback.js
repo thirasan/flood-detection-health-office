@@ -6,7 +6,7 @@ window.fallbackData = {
       {
         type: 'Feature',
         properties: {
-          name: 'น้ำท่วมตัวเมืองหาดใหญ่ (สำรองในตัว)',
+          name: 'น้ำท่วมตัวเมือง (สำรองในตัว)',
           source: 'inline fallback'
         },
         geometry: {
@@ -26,7 +26,7 @@ window.fallbackData = {
       {
         type: 'Feature',
         properties: {
-          name: 'น้ำท่วมพื้นที่ควนลัง (สำรองในตัว)',
+          name: 'น้ำท่วมพื้นที่ (สำรองในตัว)',
           source: 'inline fallback'
         },
         geometry: {
