@@ -73,8 +73,7 @@ function bindControls() {
   if (typeSelect) {
     typeSelect.addEventListener('change', (e) => {
       selectedType = e.target.value || 'all';
-      // Recompute distances within the current province but new type filter
-      calculateAndRender();
+      withRenderLoading(() => calculateAndRender());
     });
   }
 }
@@ -87,29 +86,37 @@ function startAutoRefresh() {
 async function refreshData(manual = false) {
   if (isLoading) return;
   setLoading(true);
+  setRenderLoading(true);
   let facilityData = facilities;
   let floodData = floodGeojson;
   let errorMsg = '';
   try {
-    facilityData = await loadFacilityData();
-  } catch (err) {
-    console.error('โหลดสถานพยาบาลล้มเหลว', err);
-    errorMsg = 'โหลดข้อมูลสถานพยาบาลไม่สำเร็จ';
-  }
-  try {
-    floodData = await loadFloodData();
-  } catch (err) {
-    console.error('โหลดน้ำท่วมล้มเหลว', err);
-    errorMsg = errorMsg || 'โหลดข้อมูลน้ำท่วมไม่สำเร็จ';
-  }
+    try {
+      facilityData = await loadFacilityData();
+    } catch (err) {
+      console.error('โหลดสถานพยาบาลล้มเหลว', err);
+      errorMsg = 'โหลดข้อมูลสถานพยาบาลไม่สำเร็จ';
+    }
+    try {
+      floodData = await loadFloodData();
+    } catch (err) {
+      console.error('โหลดน้ำท่วมล้มเหลว', err);
+      errorMsg = errorMsg || 'โหลดข้อมูลน้ำท่วมไม่สำเร็จ';
+    }
 
-  facilities = Array.isArray(facilityData) ? facilityData : [];
-  setFilterOptions(facilities);
-  floodGeojson = normalizeFlood(floodData);
-  calculateAndRender();
-  setLastUpdated(manual, !!errorMsg);
-  showError(errorMsg);
-  setLoading(false);
+    facilities = Array.isArray(facilityData) ? facilityData : [];
+    setFilterOptions(facilities);
+    floodGeojson = normalizeFlood(floodData);
+    calculateAndRender();
+  } catch (err) {
+    console.error('คำนวณผลล้มเหลว', err);
+    errorMsg = errorMsg || 'คำนวณผลไม่สำเร็จ';
+  } finally {
+    setLastUpdated(manual, !!errorMsg);
+    showError(errorMsg);
+    setLoading(false);
+    setRenderLoading(false);
+  }
 }
 
 async function loadJSON(path) {
@@ -398,6 +405,23 @@ function setLoading(state) {
   if (!btn) return;
   btn.disabled = state;
   btn.textContent = state ? 'กำลังดึงข้อมูล…' : 'รีเฟรชข้อมูล';
+}
+
+function setRenderLoading(state) {
+  ['map-loading', 'table-loading'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.style.display = state ? 'flex' : 'none';
+  });
+}
+
+function withRenderLoading(fn) {
+  setRenderLoading(true);
+  try {
+    fn();
+  } finally {
+    setRenderLoading(false);
+  }
 }
 
 function setSourceLabel(connected, url, isPrimary) {

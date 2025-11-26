@@ -44,7 +44,13 @@
   <main class="layout">
     <section class="panel map-panel">
       <h2>แผนที่น้ำท่วมและสถานพยาบาล</h2>
-      <div id="map"></div>
+      <div class="map-shell">
+        <div id="map"></div>
+        <div id="map-loading" class="loading-overlay">
+          <span class="loading-overlay__spinner"></span>
+          <span>กำลังโหลดแผนที่…</span>
+        </div>
+      </div>
       <p class="footnote">* พื้นที่สีน้ำเงินคือขอบเขตน้ำท่วมจำลองจากข้อมูลดาวเทียม/เซ็นเซอร์</p>
     </section>
     <section class="panel list-panel">
@@ -79,6 +85,10 @@
       </div>
       <div id="error-banner" class="error-banner" style="display:none;"></div>
       <div class="table-wrapper">
+        <div id="table-loading" class="loading-overlay loading-overlay--table">
+          <span class="loading-overlay__spinner"></span>
+          <span>กำลังคำนวณรายการ…</span>
+        </div>
         <table>
           <thead>
             <tr>

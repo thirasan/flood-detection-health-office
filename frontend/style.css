@@ -179,12 +179,16 @@ header.hero {
   margin-bottom: 10px;
 }
 
-.map-panel #map {
-  width: 100%;
-  height: 450px;
+.map-shell {
+  position: relative;
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--border);
+}
+
+.map-panel #map {
+  width: 100%;
+  height: 450px;
 }
 
 .footnote {
@@ -222,6 +226,41 @@ select {
   border-radius: 12px;
   border: 1px solid var(--border);
   overflow: hidden;
+  position: relative;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(12, 27, 48, 0.86);
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  z-index: 5;
+  backdrop-filter: blur(2px);
+}
+
+.loading-overlay--table {
+  background: linear-gradient(180deg, rgba(12, 27, 48, 0.9), rgba(12, 27, 48, 0.96));
+}
+
+.loading-overlay__spinner {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 3px solid rgba(233, 240, 255, 0.2);
+  border-top-color: var(--accent);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 table {
