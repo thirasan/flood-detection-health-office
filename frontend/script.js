@@ -67,13 +67,13 @@ function bindControls() {
     provinceSelect.addEventListener('change', (e) => {
       selectedProvince = e.target.value || 'all';
       updateProvinceLabel();
-      refreshData(true);
+      refreshData(true, { showRenderLoading: true });
     });
   }
   if (typeSelect) {
     typeSelect.addEventListener('change', (e) => {
       selectedType = e.target.value || 'all';
-      withRenderLoading(() => calculateAndRender());
+      void withRenderLoading(() => calculateAndRender());
     });
   }
 }
@@ -83,10 +83,10 @@ function startAutoRefresh() {
   autoRefreshId = setInterval(() => refreshData(false), REFRESH_MS);
 }
 
-async function refreshData(manual = false) {
+async function refreshData(manual = false, { showRenderLoading = false } = {}) {
   if (isLoading) return;
   setLoading(true);
-  setRenderLoading(true);
+  if (showRenderLoading) setRenderLoading(true);
   let facilityData = facilities;
   let floodData = floodGeojson;
   let errorMsg = '';
@@ -115,7 +115,7 @@ async function refreshData(manual = false) {
     setLastUpdated(manual, !!errorMsg);
     showError(errorMsg);
     setLoading(false);
-    setRenderLoading(false);
+    if (showRenderLoading) setRenderLoading(false);
   }
 }
 
@@ -415,10 +415,16 @@ function setRenderLoading(state) {
   });
 }
 
-function withRenderLoading(fn) {
+function waitForPaint() {
+  // Double rAF to ensure the overlay paints before heavy sync work
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+}
+
+async function withRenderLoading(fn) {
   setRenderLoading(true);
   try {
-    fn();
+    await waitForPaint();
+    await fn();
   } finally {
     setRenderLoading(false);
   }
