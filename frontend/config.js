@@ -11,7 +11,7 @@ const hatyaiBBox = {
 };
 
 window.appConfig = {
-  backendBaseUrl: 'http://localhost:4000',
+  backendBaseUrl: 'https://flood-detection-health-office.onrender.com',
   gistda: {
     enabled: false, // ปิดการเรียกตรง GISTDA ในฝั่งเว็บ ให้เรียกผ่าน backend เท่านั้น
     apiKey: '',

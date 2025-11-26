@@ -127,7 +127,7 @@ async function loadJSON(path) {
 
 async function loadFloodData() {
   // 1) เรียก backend ภายใน (หลีกเลี่ยง CORS/GISTDA redirect)
-  const backendBase = (config.backendBaseUrl || 'http://localhost:4000').replace(/\/$/, '');
+  const backendBase = (config.backendBaseUrl || 'https://flood-detection-health-office.onrender.com').replace(/\/$/, '');
   const provinceSlug =
     selectedProvince === 'all'
       ? ''
@@ -193,7 +193,10 @@ function calculateAndRender() {
 
   const hasFlood = Array.isArray(floodGeojson.features) && floodGeojson.features.length > 0;
 
-  const filteredFacilities = facilities.filter(filterFacilities).slice(0, MAX_RENDER_FACILITIES);
+  const filteredFacilities = facilities
+    .filter(filterFacilities)
+    .filter(hasValidCoords)
+    .slice(0, MAX_RENDER_FACILITIES);
 
   const enriched = filteredFacilities.map((facility) => {
     const point = turf.point([facility.lng, facility.lat]);
@@ -229,6 +232,10 @@ function filterFacilities(facility) {
   const facilityProv = normalizeProvince(facility.province);
   const matchesProvince = selectedProv === 'all' || !selectedProv || facilityProv === selectedProv;
   return matchesType && matchesProvince;
+}
+
+function hasValidCoords(facility) {
+  return Number.isFinite(facility?.lat) && Number.isFinite(facility?.lng);
 }
 
 function findNearestFloodDistance(point, floodFeatures) {
