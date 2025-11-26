@@ -1,6 +1,6 @@
 const mapCenter = [7.005, 100.49];
 const zoomLevel = 12.6;
-const REFRESH_MS = 30 * 60 * 1000; // 5 นาที
+const REFRESH_MS = 30 * 60 * 1000; // 30 นาที
 const config = window.appConfig || {};
 const provinceNameMap = {
   'surat-thani': 'สุราษฎร์ธานี',
@@ -28,7 +28,7 @@ let markerIndex = new Map();
 let autoRefreshId = null;
 let isLoading = false;
 let selectedProvince = 'สงขลา';
-let selectedType = 'โรงพยาบาล';
+let selectedType = 'คลินิกทันตกรรม';
 
 const statusConfig = {
   flooded: { label: 'น้ำท่วม', badgeClass: 'badge--danger', color: '#ef4444' },
@@ -70,7 +70,7 @@ function bindControls() {
   if (typeSelect) {
     typeSelect.addEventListener('change', (e) => {
       selectedType = e.target.value || 'all';
-      calculateAndRender();
+      rerenderFiltered();
     });
   }
 }
@@ -83,22 +83,29 @@ function startAutoRefresh() {
 async function refreshData(manual = false) {
   if (isLoading) return;
   setLoading(true);
+  let facilityData = facilities;
+  let floodData = floodGeojson;
+  let errorMsg = '';
   try {
-    const [facilityData, floodData] = await Promise.all([
-      loadFacilityData(),
-      loadFloodData()
-    ]);
-    facilities = facilityData;
-    setFilterOptions(facilities);
-    floodGeojson = normalizeFlood(floodData);
-    calculateAndRender();
-    setLastUpdated(manual);
+    facilityData = await loadFacilityData();
   } catch (err) {
-    console.error(err);
-    setLastUpdated(manual, true);
-  } finally {
-    setLoading(false);
+    console.error('โหลดสถานพยาบาลล้มเหลว', err);
+    errorMsg = 'โหลดข้อมูลสถานพยาบาลไม่สำเร็จ';
   }
+  try {
+    floodData = await loadFloodData();
+  } catch (err) {
+    console.error('โหลดน้ำท่วมล้มเหลว', err);
+    errorMsg = errorMsg || 'โหลดข้อมูลน้ำท่วมไม่สำเร็จ';
+  }
+
+  facilities = Array.isArray(facilityData) ? facilityData : [];
+  setFilterOptions(facilities);
+  floodGeojson = normalizeFlood(floodData);
+  calculateAndRender();
+  setLastUpdated(manual, !!errorMsg);
+  showError(errorMsg);
+  setLoading(false);
 }
 
 async function loadJSON(path) {
@@ -110,7 +117,10 @@ async function loadJSON(path) {
 async function loadFloodData() {
   // 1) เรียก backend ภายใน (หลีกเลี่ยง CORS/GISTDA redirect)
   const backendBase = (config.backendBaseUrl || 'http://localhost:4000').replace(/\/$/, '');
-  const provinceSlug = provinceSlugMap[selectedProvince] || provinceSlugMap[selectedProvince?.trim()] || '';
+  const provinceSlug =
+    selectedProvince === 'all'
+      ? ''
+      : provinceSlugMap[selectedProvince] || provinceSlugMap[selectedProvince?.trim()] || '';
   const limit = 500;
   let offset = 0;
   let aggregated = [];
@@ -140,64 +150,30 @@ async function loadFloodData() {
       setSourceLabel(true, `${backendBase}/api/flood`, true);
       return finalFc;
     }
-    console.warn('backend ส่งข้อมูลแต่ไม่มีโพลิกอน ใช้สำรองแทน');
+    throw new Error('backend ส่งข้อมูลแต่ไม่มีโพลิกอน');
   } catch (err) {
     console.warn('โหลดจาก backend ไม่สำเร็จ', err);
   }
-
-  // 2) ใช้ไฟล์สำรอง (เพื่อไม่ให้หน้าโล่ง)
-  const fallback = config.fallbackFloodUrl || './data/flood.geojson';
-  try {
-    const data = await loadJSON(fallback);
-    const normalized = normalizeFlood(data);
-    if (normalized.features.length > 0) {
-      setSourceLabel(true, fallback, false);
-      return normalized;
-    }
-  } catch (err) {
-    console.warn('โหลดข้อมูลสำรองไม่สำเร็จ', err);
-  }
-
-  // 3) ใช้สำรองในตัวถ้ามี (กรณีเปิดไฟล์โดยตรงหรือโดนบล็อก CORS)
-  if (window.fallbackData?.flood) {
-    setSourceLabel(true, 'inline fallback', false);
-    return window.fallbackData.flood;
-  }
-
   setSourceLabel(false);
   throw new Error('โหลดข้อมูลน้ำท่วมไม่สำเร็จ');
 }
 
 async function loadFacilityData() {
   const primary = config.facilitySourceUrl;
-  const fallback = config.fallbackFacilityUrl || './data/hospitals.json';
-  const sources = [primary, fallback].filter(Boolean);
-
-  for (let i = 0; i < sources.length; i += 1) {
-    try {
-      const data = await loadJSON(sources[i]);
-      return data;
-    } catch (err) {
-      console.warn('โหลดสถานพยาบาลไม่สำเร็จจาก', sources[i], err);
-    }
-  }
-
-  if (window.fallbackData?.facilities) {
-    return window.fallbackData.facilities;
-  }
-
-  throw new Error('โหลดข้อมูลสถานพยาบาลไม่สำเร็จ');
+  if (!primary) throw new Error('ไม่พบแหล่งข้อมูลสถานพยาบาล');
+  return loadJSON(primary);
 }
 
 function calculateAndRender() {
   if (!floodGeojson) {
     floodGeojson = { type: 'FeatureCollection', features: [] };
   }
+  MAX_RENDER_FACILITIES = 2000
 
   const hasFlood = Array.isArray(floodGeojson.features) && floodGeojson.features.length > 0;
   console.log('Flood features loaded:', hasFlood ? floodGeojson.features.length : 0);
 
-  const filteredFacilities = facilities.filter(filterFacilities);
+  const filteredFacilities = facilities.filter(filterFacilities).slice(0, MAX_RENDER_FACILITIES);
 
   const enriched = filteredFacilities.map((facility) => {
     const point = turf.point([facility.lng, facility.lat]);
@@ -214,10 +190,14 @@ function calculateAndRender() {
   renderTable(enriched);
 }
 
+function rerenderFiltered() {
+  const filtered = computedFacilities.filter(filterFacilities);
+  renderMarkers(filtered);
+  renderTable(filtered);
+}
+
 function filterFacilities(facility) {
-  const matchProvince = selectedProvince === 'all' || facility.province === selectedProvince;
-  const matchType = selectedType === 'all' || facility.type === selectedType;
-  return matchProvince && matchType;
+  return facility.type === selectedType || selectedType === 'all';
 }
 
 function findNearestFloodDistance(point, floodFeatures) {
@@ -412,28 +392,36 @@ function setFilterOptions(facilityData) {
   const provinceSelect = document.getElementById('province-filter');
   const typeSelect = document.getElementById('type-filter');
   if (provinceSelect) {
-    const provinces = Array.from(
-      new Set(facilityData.map((f) => f.province).filter(Boolean))
-    ).sort();
-    provinceSelect.innerHTML = provinces
-      .map((p) => `<option value="${p}">${provinceNameMap[p] || p}</option>`)
-      .join('');
-    if (!selectedProvince || !provinces.includes(selectedProvince)) {
-      selectedProvince = 'สงขลา';
+    const provinces = Array.from(new Set(facilityData.map((f) => f.province).filter(Boolean))).sort();
+    provinceSelect.innerHTML =
+      '<option value="all">ทุกจังหวัด</option>' +
+      provinces.map((p) => `<option value="${p}">${provinceNameMap[p] || p}</option>`).join('');
+    if (!selectedProvince || (!provinces.includes(selectedProvince) && selectedProvince !== 'all')) {
+      selectedProvince = provinces.includes('สงขลา') ? 'สงขลา' : provinces[0] || 'all';
     }
     provinceSelect.value = selectedProvince;
   }
   if (typeSelect) {
-    const types = Array.from(
-      new Set(facilityData.map((f) => f.type).filter(Boolean))
-    ).sort();
-    typeSelect.innerHTML = `<option value="all">ทุกประเภท</option>${types
-      .map((t) => `<option value="${t}">${t}</option>`)
-      .join('')}`;
+    const types = Array.from(new Set(facilityData.map((f) => f.type).filter(Boolean))).sort();
+    typeSelect.innerHTML =
+      '<option value="all">ทุกประเภท</option>' +
+      types.map((t) => `<option value="${t}">${t}</option>`).join('');
     if (!selectedType || (!types.includes(selectedType) && selectedType !== 'all')) {
-      selectedType = 'โรงพยาบาล';
+      selectedType = types.includes('คลินิกทันตกรรม') ? 'คลินิกทันตกรรม' : 'all';
     }
     typeSelect.value = selectedType;
+  }
+}
+
+function showError(message) {
+  const banner = document.getElementById('error-banner');
+  if (!banner) return;
+  if (message) {
+    banner.style.display = 'block';
+    banner.textContent = message;
+  } else {
+    banner.style.display = 'none';
+    banner.textContent = '';
   }
 }
 

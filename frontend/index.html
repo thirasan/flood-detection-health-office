@@ -54,10 +54,18 @@
         <div class="controls">
           <label for="province-filter">จังหวัด:</label>
           <select id="province-filter">
+            <option value="songkhla">สงขลา</option>
+            <option value="surat-thani">สุราษฎร์ธานี</option>
+            <option value="nakhon-si-thammarat">นครศรีธรรมราช</option>
+            <option value="phatthalung">พัทลุง</option>
+            <option value="narathiwat">นราธิวาส</option>
           </select>
           <label for="type-filter">ประเภท:</label>
           <select id="type-filter">
-            <option value="all">ทุกประเภท</option>
+            <option value="คลินิกทันตกรรม">คลินิกทันตกรรม</option>
+            <option value="โรงพยาบาล">โรงพยาบาล</option>
+            <option value="โรงพยาบาลส่งเสริมสุขภาพ">โรงพยาบาลส่งเสริมสุขภาพ</option>
+            <option value="คลินิก">คลินิก</option>
           </select>
           <label for="risk-filter">สถานะ:</label>
           <select id="risk-filter">
@@ -70,6 +78,7 @@
           </select>
         </div>
       </div>
+      <div id="error-banner" class="error-banner" style="display:none;"></div>
       <div class="table-wrapper">
         <table>
           <thead>
@@ -97,9 +106,9 @@
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="">
     </script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
-  <script src="./config.js?v=20251125"></script>
-  <script src="./data/fallback.js?v=20251125"></script>
-  <script src="./script.js?v=20251125"></script>
+  <script src="./config.js?v=20251128"></script>
+  <script src="./data/fallback.js?v=20251128"></script>
+  <script src="./script.js?v=20251128"></script>
 </body>
 
 </html>

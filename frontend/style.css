@@ -260,6 +260,17 @@ tbody tr:hover {
 .badge--warning { background: var(--warning); }
 .badge--watch { background: var(--watch); }
 .badge--safe { background: var(--safe); }
+.badge--nodata { background: #94a3b8; color: #0b182d; }
+
+.error-banner {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #fecdd3;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin: 8px 0;
+  font-size: 14px;
+}
 
 .distance {
   color: var(--muted);
