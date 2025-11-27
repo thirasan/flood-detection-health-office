@@ -74,7 +74,12 @@ function bindControls() {
   if (typeSelect) {
     typeSelect.addEventListener('change', (e) => {
       selectedType = e.target.value || 'all';
-      void withRenderLoading(() => calculateAndRender());
+      // Reuse computedFacilities if available (much faster - no recalculation)
+      if (computedFacilities.length > 0) {
+        rerenderFiltered();
+      } else {
+        void withRenderLoading(() => calculateAndRender());
+      }
     });
   }
 }
@@ -231,23 +236,62 @@ async function loadFloodData() {
   }
 
   try {
-    for (let i = 0; i < maxPages; i += 1) {
-      const qs = new URLSearchParams();
-      if (provinceSlug) qs.set('province', provinceSlug);
-      qs.set('limit', String(limit));
-      qs.set('offset', String(offset));
-      const backendUrl = `${backendBase}/api/flood?${qs.toString()}`;
-      const res = await fetch(backendUrl, {
-        mode: 'cors',
-        method: 'GET',
-        cache: 'no-store'
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status} จาก backend`);
-      const payload = await res.json();
-      const dataset = normalizeFlood(payload?.data || payload);
-      aggregated = aggregated.concat(dataset.features || []);
-      if (dataset.features.length < limit) break;
-      offset += limit;
+    // First request to get total count
+    const firstQs = new URLSearchParams();
+    if (provinceSlug) firstQs.set('province', provinceSlug);
+    firstQs.set('limit', String(limit));
+    firstQs.set('offset', '0');
+    const firstUrl = `${backendBase}/api/flood?${firstQs.toString()}`;
+    const firstRes = await fetch(firstUrl, {
+      mode: 'cors',
+      method: 'GET',
+      cache: 'no-store'
+    });
+    if (!firstRes.ok) throw new Error(`HTTP ${firstRes.status} จาก backend`);
+    const firstPayload = await firstRes.json();
+    const firstDataset = normalizeFlood(firstPayload?.data || firstPayload);
+    aggregated = firstDataset.features || [];
+    const total = firstPayload?.total || firstDataset.features?.length || 0;
+    
+    // If we need more pages, fetch them in parallel batches
+    if (total > limit) {
+      const remainingPages = Math.ceil((total - limit) / limit);
+      const maxPagesToFetch = Math.min(remainingPages, 19); // Max 20 total pages
+      const batchSize = 5; // Fetch 5 pages at a time in parallel
+      
+      for (let batchStart = 1; batchStart <= maxPagesToFetch; batchStart += batchSize) {
+        const batchEnd = Math.min(batchStart + batchSize - 1, maxPagesToFetch);
+        const batchPromises = [];
+        
+        for (let page = batchStart; page <= batchEnd; page += 1) {
+          const pageOffset = page * limit;
+          const qs = new URLSearchParams();
+          if (provinceSlug) qs.set('province', provinceSlug);
+          qs.set('limit', String(limit));
+          qs.set('offset', String(pageOffset));
+          const backendUrl = `${backendBase}/api/flood?${qs.toString()}`;
+          
+          batchPromises.push(
+            fetch(backendUrl, {
+              mode: 'cors',
+              method: 'GET',
+              cache: 'no-store'
+            }).then(async (res) => {
+              if (!res.ok) throw new Error(`HTTP ${res.status} จาก backend`);
+              const payload = await res.json();
+              return normalizeFlood(payload?.data || payload);
+            })
+          );
+        }
+        
+        const batchResults = await Promise.all(batchPromises);
+        batchResults.forEach((dataset) => {
+          aggregated = aggregated.concat(dataset.features || []);
+        });
+        
+        // Early exit if we got all data
+        if (aggregated.length >= total) break;
+      }
     }
     if (aggregated.length > 0) {
       const finalFc = { type: 'FeatureCollection', features: aggregated };
@@ -280,12 +324,18 @@ function calculateAndRender() {
 
   const hasFlood = Array.isArray(floodGeojson.features) && floodGeojson.features.length > 0;
 
-  const filteredFacilities = facilities
-    .filter(filterFacilities)
+  // Filter by province only (ignore type filter) so we can reuse computedFacilities when switching types
+  const selectedProv = normalizeProvince(selectedProvince);
+  const provinceFilteredFacilities = facilities
+    .filter((facility) => {
+      const facilityProv = normalizeProvince(facility.province);
+      return selectedProv === 'all' || !selectedProv || facilityProv === selectedProv;
+    })
     .filter(hasValidCoords)
     .slice(0, MAX_RENDER_FACILITIES);
 
-  const enriched = filteredFacilities.map((facility) => {
+  // Compute distances for all facilities in province (ignoring type filter)
+  const enriched = provinceFilteredFacilities.map((facility) => {
     const point = turf.point([facility.lng, facility.lat]);
     const { distanceKm, inside } = hasFlood
       ? findNearestFloodDistance(point, floodGeojson.features)
@@ -294,10 +344,14 @@ function calculateAndRender() {
     return { ...facility, distanceKm, statusKey };
   });
 
+  // Store all computed facilities for the province (so type switching can reuse them)
   computedFacilities = enriched;
+
+  // Now filter by type for rendering
+  const filtered = enriched.filter(filterFacilities);
   renderFloodLayer();
-  renderMarkers(enriched);
-  renderTable(enriched);
+  renderMarkers(filtered);
+  renderTable(filtered);
 }
 
 function rerenderFiltered() {
