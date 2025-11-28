@@ -33,7 +33,7 @@ const PROVINCES = [
 
 const GATEWAY_URL =
   process.env.GISTDA_GATEWAY_URL ||
-  'https://api-gateway.gistda.or.th/api/2.0/resources/features/flood/7days';
+  'https://api-gateway.gistda.or.th/api/2.0/resources/features/flood/3days';
 const GATEWAY_LIMIT = parseInt(process.env.GISTDA_GATEWAY_LIMIT || '10000', 10);
 const GATEWAY_OFFSET = parseInt(process.env.GISTDA_GATEWAY_OFFSET || '0', 10);
 const GATEWAY_USE_QUERY_KEY = process.env.GISTDA_GATEWAY_USE_QUERY_KEY === 'true';
@@ -190,8 +190,8 @@ function handleRequest(req, res) {
       const filtered =
         province && province !== 'all'
           ? cache.data.features.filter(
-              (f) => f.properties?.province === province || f.properties?.province_th === province
-            )
+            (f) => f.properties?.province === province || f.properties?.province_th === province
+          )
           : cache.data.features;
 
       const sliced = filtered.slice(offset, offset + limit);
