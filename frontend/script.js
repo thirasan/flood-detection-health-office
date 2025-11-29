@@ -31,6 +31,8 @@ let autoRefreshId = null;
 let isLoading = false;
 let selectedProvince = 'สงขลา';
 let selectedType = 'คลินิกทันตกรรม';
+let distanceWorker = null;
+let workerInitialized = false;
 
 const statusConfig = {
   flooded: { label: 'น้ำท่วม', badgeClass: 'badge--danger', color: '#ef4444' },
@@ -78,7 +80,7 @@ function bindControls() {
       if (computedFacilities.length > 0) {
         rerenderFiltered();
       } else {
-        void withRenderLoading(() => calculateAndRender());
+        void withRenderLoading(async () => await calculateAndRender());
       }
     });
   }
@@ -198,7 +200,12 @@ async function refreshData(manual = false, { showRenderLoading = false } = {}) {
     facilities = Array.isArray(facilityData) ? facilityData : [];
     setFilterOptions(facilities);
     floodGeojson = normalizeFlood(floodData);
-    calculateAndRender();
+    
+    // Reinitialize worker with new flood data
+    workerInitialized = false;
+    await initializeWorker();
+    
+    await calculateAndRender();
     syncEnhancedSelects();
   } catch (err) {
     console.error('คำนวณผลล้มเหลว', err);
@@ -316,7 +323,123 @@ async function loadFacilityData() {
   return loadJSON(primary);
 }
 
-function calculateAndRender() {
+/**
+ * Handle worker messages
+ */
+function handleWorkerMessage(event) {
+  const { type, results, progress, completed } = event.data;
+  
+  if (type === 'ready') {
+    workerInitialized = true;
+    return;
+  }
+  
+  if (type === 'progress' || type === 'results') {
+    // Update facilities with calculated distances
+    if (results && Array.isArray(results)) {
+      results.forEach((result) => {
+        const facility = computedFacilities[result.index];
+        if (facility) {
+          facility.distanceKm = result.distanceKm;
+          facility.statusKey = result.statusKey;
+          facility._calculated = true;
+        }
+      });
+      
+      // Update UI with new results
+      const filtered = computedFacilities.filter(filterFacilities);
+      renderMarkers(filtered);
+      renderTable(filtered);
+    }
+    
+    if (completed) {
+      console.log('Distance calculations completed');
+    }
+    return;
+  }
+  
+  if (type === 'complete') {
+    console.log('All distance calculations completed');
+    return;
+  }
+}
+
+/**
+ * Initialize or get the distance worker
+ */
+function getDistanceWorker() {
+  if (!distanceWorker && typeof Worker !== 'undefined') {
+    try {
+      distanceWorker = new Worker('./distance-worker.js');
+      
+      // Handle worker messages (set once)
+      distanceWorker.onmessage = handleWorkerMessage;
+      
+      distanceWorker.onerror = (error) => {
+        console.error('Worker error:', error);
+        // Fallback to main thread if worker fails
+        distanceWorker = null;
+        workerInitialized = false;
+      };
+    } catch (error) {
+      console.warn('Failed to create worker, falling back to main thread:', error);
+      distanceWorker = null;
+      workerInitialized = false;
+    }
+  }
+  return distanceWorker;
+}
+
+/**
+ * Initialize worker with flood data
+ * Returns a promise that resolves when worker is ready
+ */
+function initializeWorker() {
+  return new Promise((resolve) => {
+    const worker = getDistanceWorker();
+    if (!worker || !floodGeojson) {
+      resolve(false);
+      return;
+    }
+    
+    if (workerInitialized) {
+      resolve(true);
+      return;
+    }
+    
+    // Set up one-time ready handler
+    let readyResolved = false;
+    const checkReady = (event) => {
+      if (event.data.type === 'ready' && !readyResolved) {
+        readyResolved = true;
+        workerInitialized = true;
+        resolve(true);
+      }
+    };
+    
+    // Add temporary listener for ready message
+    worker.addEventListener('message', checkReady);
+    
+    worker.postMessage({
+      type: 'init',
+      payload: {
+        floodFeatures: floodGeojson.features || []
+      }
+    });
+    
+    // Timeout after 2 seconds
+    setTimeout(() => {
+      worker.removeEventListener('message', checkReady);
+      if (!readyResolved) {
+        readyResolved = true;
+        console.warn('Worker initialization timeout');
+        resolve(false);
+      }
+    }, 2000);
+  });
+}
+
+async function calculateAndRender() {
   if (!floodGeojson) {
     floodGeojson = { type: 'FeatureCollection', features: [] };
   }
@@ -334,24 +457,122 @@ function calculateAndRender() {
     .filter(hasValidCoords)
     .slice(0, MAX_RENDER_FACILITIES);
 
-  // Compute distances for all facilities in province (ignoring type filter)
-  const enriched = provinceFilteredFacilities.map((facility) => {
-    const point = turf.point([facility.lng, facility.lat]);
-    const { distanceKm, inside } = hasFlood
-      ? findNearestFloodDistance(point, floodGeojson.features)
-      : { distanceKm: Number.POSITIVE_INFINITY, inside: false };
-    const statusKey = classifyRisk(distanceKm, inside, hasFlood);
-    return { ...facility, distanceKm, statusKey };
-  });
+  // Initialize with placeholder data (no distances calculated yet)
+  const enriched = provinceFilteredFacilities.map((facility) => ({
+    ...facility,
+    distanceKm: Number.POSITIVE_INFINITY,
+    statusKey: hasFlood ? 'nodata' : 'nodata',
+    _calculated: false
+  }));
 
-  // Store all computed facilities for the province (so type switching can reuse them)
+  // Store all facilities for the province (so type switching can reuse them)
   computedFacilities = enriched;
 
-  // Now filter by type for rendering
+  // Render immediately with placeholder data
   const filtered = enriched.filter(filterFacilities);
   renderFloodLayer();
   renderMarkers(filtered);
   renderTable(filtered);
+
+  // Try to use Web Worker for calculations
+  const worker = getDistanceWorker();
+  
+  if (worker && typeof Worker !== 'undefined') {
+    // Use Web Worker for non-blocking calculations
+    const workerReady = await initializeWorker();
+    
+    if (workerReady) {
+      // Send calculation request to worker
+      worker.postMessage({
+        type: 'calculateAll',
+        payload: {
+          facilities: enriched,
+          hasFlood
+        }
+      });
+    } else {
+      // Fallback to main thread if worker initialization failed
+      console.warn('Worker initialization failed, using main thread');
+      // Fall through to main thread calculation below
+    }
+  }
+  
+  // Fallback to main thread if Web Workers not available or failed
+  if (!worker || typeof Worker === 'undefined' || !workerInitialized) {
+    // Fallback to main thread if Web Workers not available
+    console.warn('Web Workers not available, using main thread (may freeze UI)');
+    const CHUNK_SIZE = 20; // Smaller chunks for fallback
+    let currentIndex = 0;
+
+    const calculateChunk = (deadline) => {
+      let processed = 0;
+
+      while (currentIndex < enriched.length && (deadline.timeRemaining() > 0 || deadline.didTimeout)) {
+        if (processed >= CHUNK_SIZE) break;
+        
+        const facility = enriched[currentIndex];
+        if (!facility._calculated) {
+          const point = turf.point([facility.lng, facility.lat]);
+          const { distanceKm, inside } = hasFlood
+            ? findNearestFloodDistance(point, floodGeojson.features)
+            : { distanceKm: Number.POSITIVE_INFINITY, inside: false };
+          facility.distanceKm = distanceKm;
+          facility.statusKey = classifyRisk(distanceKm, inside, hasFlood);
+          facility._calculated = true;
+          processed++;
+        }
+        currentIndex++;
+      }
+
+      // Update UI with newly calculated data
+      if (processed > 0) {
+        const filtered = enriched.filter(filterFacilities);
+        renderMarkers(filtered);
+        renderTable(filtered);
+      }
+
+      // Continue if there's more work
+      if (currentIndex < enriched.length) {
+        if (typeof requestIdleCallback !== 'undefined') {
+          requestIdleCallback(calculateChunk, { timeout: 100 });
+        } else {
+          setTimeout(calculateChunk, 0);
+        }
+      }
+    };
+
+    // Start progressive calculation
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(calculateChunk, { timeout: 100 });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      const fallbackCalculate = async () => {
+        for (let i = 0; i < enriched.length; i += CHUNK_SIZE) {
+          const chunk = enriched.slice(i, i + CHUNK_SIZE);
+          chunk.forEach((facility) => {
+            if (!facility._calculated) {
+              const point = turf.point([facility.lng, facility.lat]);
+              const { distanceKm, inside } = hasFlood
+                ? findNearestFloodDistance(point, floodGeojson.features)
+                : { distanceKm: Number.POSITIVE_INFINITY, inside: false };
+              facility.distanceKm = distanceKm;
+              facility.statusKey = classifyRisk(distanceKm, inside, hasFlood);
+              facility._calculated = true;
+            }
+          });
+          
+          // Update UI
+          const filtered = enriched.filter(filterFacilities);
+          renderMarkers(filtered);
+          renderTable(filtered);
+          
+          // Yield to event loop
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      };
+      fallbackCalculate();
+    }
+  }
 }
 
 function rerenderFiltered() {
@@ -392,22 +613,86 @@ function findNearestFloodDistance(point, floodFeatures) {
   );
   if (validFeatures.length === 0) return { distanceKm: Number.POSITIVE_INFINITY, inside: false };
 
+  const [lng, lat] = point.geometry.coordinates;
   let shortest = Number.POSITIVE_INFINITY;
   let inside = false;
+  let foundInside = false;
+  
+  // Thresholds for risk classification (we only need to know which threshold we're in)
+  const HIGH_RISK_THRESHOLD = 3; // < 3km = high risk
+  const MEDIUM_RISK_THRESHOLD = 10; // 3-10km = medium risk
+  const LOW_RISK_THRESHOLD = 50; // > 50km = safe (don't need exact distance)
 
-  turf.flattenEach({ type: 'FeatureCollection', features: validFeatures }, (feature) => {
+  // Pre-compute bounding boxes for fast approximate distance checks
+  const featuresWithBbox = validFeatures.map((f, idx) => {
     try {
-      if (turf.booleanPointInPolygon(point, feature)) {
-        inside = true;
-        shortest = 0;
-        return;
-      }
-      const boundaryLine = turf.polygonToLine(feature);
-      const distance = turf.pointToLineDistance(point, boundaryLine, { units: 'kilometers' });
-      if (Number.isFinite(distance) && distance < shortest) shortest = distance;
-    } catch (err) {
+      const bbox = turf.bbox(f);
+      // Calculate approximate distance to bbox center (much faster than exact)
+      const centerX = (bbox[0] + bbox[2]) / 2;
+      const centerY = (bbox[1] + bbox[3]) / 2;
+      const approxDist = Math.sqrt(Math.pow(lng - centerX, 2) + Math.pow(lat - centerY, 2)) * 111; // Rough km conversion
+      return { feature: f, bbox, approxDist, idx };
+    } catch {
+      return { feature: f, bbox: null, approxDist: Infinity, idx };
     }
   });
+
+  // Sort by approximate distance (check closer features first)
+  featuresWithBbox.sort((a, b) => a.approxDist - b.approxDist);
+
+  // Only check features within reasonable distance (50km threshold + buffer)
+  const nearbyFeatures = featuresWithBbox.filter(f => f.approxDist <= LOW_RISK_THRESHOLD + 10);
+  
+  // Create a map for quick lookup
+  const featureBboxMap = new Map();
+  nearbyFeatures.forEach(f => featureBboxMap.set(f.feature, f));
+
+  turf.flattenEach({ type: 'FeatureCollection', features: nearbyFeatures.map(f => f.feature) }, (feature) => {
+    try {
+      // Check if inside first (most important - if inside, we're done!)
+      if (!foundInside && turf.booleanPointInPolygon(point, feature)) {
+        inside = true;
+        shortest = 0;
+        foundInside = true;
+        return;
+      }
+      
+      // Only calculate exact distance if we need to (within risk thresholds)
+      if (!foundInside && shortest > HIGH_RISK_THRESHOLD) {
+        const withBbox = featureBboxMap.get(feature);
+        
+        // If approximate distance is > 50km, skip expensive exact calculation
+        if (withBbox && withBbox.approxDist > LOW_RISK_THRESHOLD) {
+          if (shortest > LOW_RISK_THRESHOLD) {
+            shortest = LOW_RISK_THRESHOLD + 1; // Mark as "safe" (>50km)
+          }
+          return;
+        }
+        
+        // Only calculate exact distance for features that might be in risk zones
+        if (shortest > HIGH_RISK_THRESHOLD) {
+          const boundaryLine = turf.polygonToLine(feature);
+          const distance = turf.pointToLineDistance(point, boundaryLine, { units: 'kilometers' });
+          if (Number.isFinite(distance) && distance < shortest) {
+            shortest = distance;
+            // Early exit if we found it's inside or very close
+            if (shortest < 0.01) foundInside = true;
+            // If we found it's > 50km, mark as safe threshold
+            if (shortest > LOW_RISK_THRESHOLD) {
+              shortest = LOW_RISK_THRESHOLD + 1; // Mark as safe (>50km)
+            }
+          }
+        }
+      }
+    } catch (err) {
+      // Skip invalid features silently
+    }
+  });
+
+  // If no nearby features found, mark as safe (>50km)
+  if (nearbyFeatures.length === 0) {
+    shortest = LOW_RISK_THRESHOLD + 1;
+  }
 
   if (!Number.isFinite(shortest)) {
     shortest = Number.POSITIVE_INFINITY;
@@ -531,7 +816,10 @@ function formatDistance(distanceKm) {
   if (!Number.isFinite(distanceKm)) return 'ไม่ทราบ';
   if (distanceKm === 0) return 'อยู่ในพื้นที่น้ำท่วม';
   if (distanceKm < 0.05) return '< 50 เมตร';
-  return `${distanceKm.toFixed(2)} กม.`;
+  if (distanceKm < 3) return `${distanceKm.toFixed(2)} กม.`; // Show exact for high risk
+  if (distanceKm < 10) return `${distanceKm.toFixed(1)} กม.`; // Show 1 decimal for medium risk
+  if (distanceKm <= 50) return `${Math.round(distanceKm)} กม.`; // Round for low risk
+  return '> 50 กม.'; // Threshold for safe facilities
 }
 
 function setLastUpdated(manual = false, hasError = false) {
